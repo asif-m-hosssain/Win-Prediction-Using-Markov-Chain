@@ -1,0 +1,405 @@
+---
+title: "Markovian Analysis On Argentine Game Result"
+output: html_notebook
+---
+
+**Project Summary**
+A Markov chain or Markov process is a stochastic model describing a sequence of possible events in which the probability of each event depends only on the state attained in the previous event.Here data set containing football teams associated with fifa are used to predict the probability of  Argentine National Football team to predict the outcome of nth match.
+
+Later we also used the multinational process on Markov chain to predict the trend of the outcome of the match after n matches.
+
+**Importing Necessary Libraries**
+```{r}
+library(dplyr)
+library(data.table)
+library(markovchain)
+library(diagram)
+library(expm)
+library(pracma)
+library(ggplot2)
+```
+
+**Importing dataset from csv file**
+This dataset contains necessary data for fotball teams associated with fifa. dataset includes features such as team names, date of match, result of the match, fifa rank of the, information regarding the venue etc.
+```{r}
+team=read.csv("matches.csv",header=TRUE,sep=",")
+class(team)
+team
+```
+**Data preprocessing**
+The dataset needs a bit of preprocessing as only informatuon regarting the Argentine Football team will be used.
+```{r}
+team=read.csv("matches.csv",header=TRUE,sep=",")
+#team
+arg=team[team$home_team == 'Argentina' | team$away_team == 'Argentina',]
+arg
+#at = team[team$away_team == 'Argentina',]
+#head(at, 10)
+```
+
+Result isolation and modification is done here so as the results of the home team is given. Therefore a bit of modifiaction is done so that results are given when Argentine Team is both home and away. It is stored in "argentina_result" and allocated in a new dataset cal "new_df". After that only the "argentina_result" column is segrated which would be used in the Markov Chain process. The states in the "argentina_result" columns are Win,Lose or Draw.
+```{r}
+new_df<-arg%>%mutate(argentina_result= case_when(away_team =='Argentina' & home_team_result == 'Win' ~ 'Lose',
+                          away_team =='Argentina' & home_team_result == 'Lose' ~ 'Win',
+                          away_team =='Argentina' & home_team_result == 'Draw' ~ 'Draw',
+                          home_team =='Argentina' & home_team_result == 'Win' ~ 'Win',
+                          home_team =='Argentina' & home_team_result == 'Lose' ~ 'Lose',
+                          home_team =='Argentina' & home_team_result == 'Draw' ~ 'Draw',
+                          
+                          ))
+new_df
+result = new_df[c("argentina_result")]
+result
+#class(result)
+```
+**Initiazalition of Transition matrix**
+State & State Transitions variable are declared here which will be further used to hold the transitional probailities from each and every state. 
+```{r}
+#win transitions
+wtw=0 #->win
+wtl=0 #->loss
+wtd=0 #->draw
+
+#loss transitions
+ltl=0 #->loss
+ltw=0 #->win
+ltd=0 #->draw
+
+#draw transitions
+dtd=0 #->draw
+dtw=0 #->win
+dtl=0 #->loss
+```
+
+```{r}
+#Length of the column
+len = lengths(result)-1
+len
+```
+
+
+State transitions occurances are calculated here by iterating over the "argentina_result" column.Transitions include "wtw" referring to "win to win" transition, ""wtl"  referring to "win to loss" transitions. This will be used to calculate the probabilities, which are shown in the later steps.
+```{r}
+for (i in 1:len){
+  if (result[i,] == "Win"){
+    if(result[i+1,] == "Win"){
+      wtw= wtw + 1
+    }
+    else if(result[i+1,] == "Lose"){
+      wtl= wtl + 1
+    }
+    else{
+      wtd = wtd + 1
+    }
+  }
+  
+  else if (result[i,] == "Lose"){
+    if(result[i+1,] == "Lose"){
+      ltl= ltl + 1
+    }
+    else if(result[i+1,] == "Win"){
+      ltw= ltw + 1
+    }
+    else{
+      ltd = ltd + 1
+    }
+  }
+  
+  else if (result[i,] == "Draw"){
+    if(result[i+1,] == "Draw"){
+      dtd= dtd + 1
+    }
+    else if(result[i+1,] == "Win"){
+      dtw= dtw + 1
+    }
+    else{
+      dtl = dtl + 1
+    }
+  }
+}
+
+```
+
+```{r}
+#Result checking
+# wtw
+# wtl
+# wtd
+# 
+# ltl
+# ltw
+# ltd
+# 
+# dtd
+# dtw
+# dtl
+```
+
+```{r}
+#Number of occurances
+# table(result$argentina_result)
+# count(filter(result,argentina_result=="Win"))
+# count(filter(result,argentina_result=="Lose"))
+# count(filter(result,argentina_result=="Draw"))
+#Total Number of 
+wt = wtw+wtl+wtd
+lt = ltl+ltw+ltd
+dt = dtd+dtw+dtl
+```
+
+```{r}
+#Transitional Probabilities
+tp_wtw = wtw/wt
+tp_wtl = wtl/wt
+tp_wtd = wtd/wt
+
+tp_ltl = ltl/lt
+tp_ltw = ltw/lt
+tp_ltd = ltd/lt
+
+tp_dtd = dtd/dt
+tp_dtw = dtw/dt
+tp_dtl = dtl/dt
+
+#Result check
+# tp_wtw 
+# tp_wtl 
+# tp_wtd 
+# 
+# tp_ltl 
+# tp_ltw 
+# tp_ltd 
+# 
+# tp_dtd 
+# tp_dtw 
+# tp_dtl 
+```
+**Transitional Matrix**
+Here the transitional matrix is created usin the above values obtained from the "argentina_result" column itself 
+```{r}
+#transitional matrix creation
+tm_result<- round(matrix(c(tp_wtw,tp_wtl,tp_wtd,
+                           tp_ltl,tp_ltw,tp_ltd,
+                           tp_dtd,tp_dtw,tp_dtl),nrow = 3, byrow = TRUE),1)
+
+#Assigning state names to rows and columns of the matrix
+states = c("Win","Loss","Draw")
+row.names(tm_result) <- states 
+colnames(tm_result) = states
+tm_result
+```
+**Markov chain creation**
+Here using a Markov chain object, a discrete markov chain model has been built
+
+```{r}
+transition_matrix_result <- new("markovchain",transitionMatrix=tm_result, 
+             states=c("Win","Loss","Draw"),
+             name="MarkovChain for Argentina Game Result Prediction")
+```
+
+```{r}
+#output
+transition_matrix_result 
+```
+**State Diagrams**
+Our first figure is the Mmatch prediction state diagram
+```{r}
+plotmat(t(tm_result),pos = c(2,1), 
+        lwd = 1, box.lwd = 2, 
+        cex.txt = 0.8, 
+        box.size = 0.12, 
+        box.type = "circle", 
+        box.prop = 0.7,
+        box.col = "cyan",
+        arr.length=.4,
+        arr.width=.2,
+        self.cex = .6,
+        self.shifty = -.01,
+        self.shiftx = .17,
+        main = "Result Prediction on the next match")
+```
+Here matrix initialization is done to predict the result after n days
+```{r}
+initial_state <- matrix(c(1,0,0),nrow=1, byrow=TRUE)
+```
+
+Now, let us predict the probilties of the Argentine team result after 1 match
+```{r}
+matches <- 1
+after_one_match <- round(initial_state * transition_matrix_result ^ matches,1)
+after_one_match
+
+after_one_match <- round(tm_result%^%matches,1)
+after_one_match
+#plot
+plotmat(t(after_one_match),pos = c(2,1), 
+        lwd = 1, box.lwd = 2, 
+        cex.txt = 0.8, 
+        box.size = 0.12, 
+        box.type = "circle", 
+        box.prop = 0.7,
+        box.col = "cyan",
+        arr.length=.4,
+        arr.width=.2,
+        self.cex = .6,
+        self.shifty = -.01,
+        self.shiftx = .17,
+        main = "Result Prediction on the next match")
+```
+Now, let us predict the probilties of the Argentine team result after 2 matches
+```{r}
+matches <-2
+after_two_match <- round(initial_state * transition_matrix_result ^ matches,1)
+after_two_match
+
+after_two_match <- round(tm_result%^%matches,1)
+after_two_match
+
+plotmat(t(after_two_match),pos = c(1,2), 
+        lwd = 1, box.lwd = 2, 
+        cex.txt = 0.8, 
+        box.size = 0.1, 
+        box.type = "circle", 
+        box.prop = 0.5,
+        box.col = "cyan",
+        arr.length=.1,
+        arr.width=.1,
+        self.cex = .6,
+        self.shifty = -.01,
+        self.shiftx = .14,
+        main = "Result Prediction after 2 matches")
+```
+Now, let us predict the probilties of the Argentine team result after 7 matches
+```{r}
+matches <-7
+after_two_match <- round(initial_state * transition_matrix_result ^ matches,1)
+after_two_match
+
+after_two_match <- round(tm_result%^%matches,1)
+after_two_match
+
+plotmat(t(after_two_match),pos = c(1,2), 
+        lwd = 1, box.lwd = 2, 
+        cex.txt = 0.8, 
+        box.size = 0.1, 
+        box.type = "circle", 
+        box.prop = 0.5,
+        box.col = "cyan",
+        arr.length=.1,
+        arr.width=.1,
+        self.cex = .6,
+        self.shifty = -.01,
+        self.shiftx = .14,
+        main = "Result Prediction after 7 matches")
+```
+Now, let us predict the probilties of the Argentine team result after 100 matches
+```{r}
+matches <-100
+after_hundred_match <- round(initial_state * transition_matrix_result ^ matches,1)
+after_hundred_match
+
+after_hundred_match <- round(tm_result%^%matches,1)
+after_hundred_match
+
+plotmat(t(after_two_match),pos = c(1,2), 
+        lwd = 1, box.lwd = 2, 
+        cex.txt = 0.8, 
+        box.size = 0.1, 
+        box.type = "circle", 
+        box.prop = 0.5,
+        box.col = "cyan",
+        arr.length=.1,
+        arr.width=.1,
+        self.cex = .6,
+        self.shifty = -.01,
+        self.shiftx = .14,
+        main = "Result Prediction after 100 matches")
+```
+
+
+**Simulation of Multinomial Markov Chain **
+We will use transition matrix calculted before for our simulation. The values would refer to the following states.
+Win->1
+Loss->2
+Draw->3
+```{r}
+round(tm_result,1)
+```
+```{r}
+run.mc.sim <- function( P, t) { 
+
+  # number of possible states
+  num.states <- nrow(P)
+  print("num.states")
+  print(num.states)
+  
+  # stores the states X_t through time
+  states <- numeric(t)
+  print('the value of state is:')
+  print(states)
+  
+  # initialize variable for first state 
+  states[1]    <- 1
+
+
+  for(i in 2:t) { #i=2
+    # probability vector to simulate next state X_{t+1}
+    a<-states[i-1]
+    print("the value of a is")
+    print( a)
+    pt  <- P[a, ]
+    print("THe value of pt")
+    print(pt)
+    ## draw from multinomial and determine state
+
+    states[i] <-  which(rmultinom(1, 1, pt) == 1)
+    print("value of states after rmul")
+    print(states[i])
+  }
+
+  return(states)
+
+}
+```
+**Graphical Result of simulation**
+After 100 iteration of out simulation done on the match outcome after 20 days we would get the following graph with the respective trend below.
+```{r}
+# setup transition matrix p, here we will use transition_matrix_weather
+
+P <- tm_result
+
+#num.iterations 
+
+t=20
+
+MC<-run.mc.sim(P,t)
+MC
+plot(MC,type="b",col='red',pch="*")
+
+MC2<-run.mc.sim(P,t)
+MC2
+lines(MC2,type="b",col='cyan',pch="*")
+
+
+MC3<-run.mc.sim(P,t)
+MC3
+lines(MC3,type="b",col='green',pch="*")
+
+MC4<-run.mc.sim(P,t)
+MC4
+lines(MC4,type="b",col='grey',pch="*")
+```
+**Steady State**
+Here we can see that steady state is not reached, However we found out something new.If we look at our transition matrix after 100 days which was calculated above, we can see that column values are equal, i.e from any state (Win/Loss/Draw) the probability of going to Win or Loss or Draw would have the same values
+```{r}
+steadyStates(transition_matrix_result)
+after_hundred_match
+```
+
+
+
+
+
+
+
+
